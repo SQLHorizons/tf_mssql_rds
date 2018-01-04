@@ -3,7 +3,22 @@ data "aws_security_group" "DBAdmin" {
 }
 
 data "aws_iam_role" "db_role" {
-  role_name = "${var.iam_role}"
+  name = "${var.iam_role}"
+}
+
+resource "random_id" "password" {
+byte_length = 8
+}
+
+resource "vault_generic_secret" "rds_vault_access" {
+  path = "${var.secret}/${var.identifier}"
+
+  data_json = <<EOT
+{
+  "dbAdmin": "${random_id.password.hex}",
+  "endpoint": "${aws_route53_record.alias.name}"
+}
+EOT
 }
 
 resource "aws_kms_key" "rds-instance-key" {
@@ -11,26 +26,23 @@ resource "aws_kms_key" "rds-instance-key" {
   tags = "${var.tags}"
 }
 
-resource "aws_security_group" "rds_sg" {
-  name        = "${var.identifier}"
-  description = "Controls access to MS SQL RDS instances"
-  vpc_id      = "${var.vpc_id}"
+resource "aws_kms_alias" "rds-instance-key-alias" {
+  name          = "alias/${var.identifier}"
+  target_key_id = "${aws_kms_key.rds-instance-key.arn}"
+}
 
-  egress {
-    from_port       = 0
-    to_port         = 0
-    protocol        = "-1"
-    cidr_blocks     = ["0.0.0.0/0"]
-  }
+module "rds_sg" {
+  source = "./rds_sg/"
 
-  ingress {
-    from_port       = "${var.port}"
-    to_port         = "${var.port}"
-    protocol        = "tcp"
-    security_groups = ["${data.aws_security_group.DBAdmin.id}","${var.vpc_security_group_ids}"]
-  }
+  create_cidr_ingress_rule = "${var.create_cidr_ingress_rule}"
+  identifier               = "${var.identifier}"
+  vpc_id                   = "${var.vpc_id}"
+  port                     = "${var.port}"
 
-  tags = "${var.tags}"
+  vpc_security_group_ids   = ["${data.aws_security_group.DBAdmin.id}","${var.vpc_security_group_ids}"]
+  cidr_blocks              = "${var.cidr_blocks}"
+
+  tags                     = "${var.tags}"
 }
 
 resource "aws_db_option_group" "option_group" {
@@ -57,6 +69,12 @@ resource "aws_db_parameter_group" "parameter_group" {
 
   tags = "${var.tags}"
 
+    parameter {
+    name         = "rds.force_ssl"
+    value        = 1
+    apply_method = "pending-reboot"
+  }
+  
   parameter {
     name         = "cost threshold for parallelism"
     value        = 100
@@ -86,15 +104,17 @@ resource "aws_db_instance" "rds" {
 
   name                        = "${var.name}"
   username                    = "${var.username}"
-  password                    = "${var.password}"
+  password                    = "${random_id.password.hex}"
   port                        = "${var.port}"
 
-  vpc_security_group_ids      = ["${aws_security_group.rds_sg.id}"]
+  vpc_security_group_ids      = ["${module.rds_sg.id}"]
+
   db_subnet_group_name        = "${var.db_subnet_group_name}"
   option_group_name           = "${aws_db_option_group.option_group.name}"
   parameter_group_name        = "${aws_db_parameter_group.parameter_group.name}"
 
   multi_az                    = "${var.multi_az}"
+# availability_zone           = "${var.region}${substr(var.identifier, 4, 1)}"
   iops                        = "${var.iops}"
   publicly_accessible         = "${var.publicly_accessible}"
   monitoring_interval         = "${var.monitoring_interval}"  
@@ -110,6 +130,15 @@ resource "aws_db_instance" "rds" {
   backup_window               = "${var.backup_window}"
 
   tags = "${var.tags}"
+}
+
+resource "aws_route53_record" "alias" {
+  provider                    = "aws.route-53-setup"
+  zone_id                     = "${var.zone_id}"
+  name                        = "${var.dns_alias}.${var.domain_name}"
+  type                        = "CNAME"
+  ttl                         = "${var.dns_ttl}"
+  records                     = ["${aws_db_instance.rds.address}"]
 }
 
 resource "aws_cloudwatch_metric_alarm" "CPU-Utilization-Warning" {
@@ -139,6 +168,23 @@ resource "aws_cloudwatch_metric_alarm" "CPU-Utilization-Critical" {
   statistic                   = "Average"
   threshold                   = "95"
   alarm_description           = "RDS CPU Utilization Critical on ${var.identifier}"
+  dimensions {
+    DBInstanceIdentifier      = "${var.identifier}"
+  }
+  alarm_actions               = ["${var.alarm_action}"]
+  insufficient_data_actions   = []
+}
+
+resource "aws_cloudwatch_metric_alarm" "Free-Storage-Warning" {
+  alarm_name                  = "${var.identifier} Free-Storage-Warning"
+  comparison_operator         = "LessThanThreshold"
+  evaluation_periods          = "2"
+  metric_name                 = "FreeStorageSpace"
+  namespace                   = "AWS/RDS"
+  period                      = "300"
+  statistic                   = "Average"
+  threshold                   = "${102.4*var.allocated_storage}"
+  alarm_description           = "RDS Free Storage Warning on ${var.identifier}"
   dimensions {
     DBInstanceIdentifier      = "${var.identifier}"
   }
@@ -207,6 +253,23 @@ resource "aws_cloudwatch_metric_alarm" "Write-Latency-Critical" {
   statistic                   = "Maximum"
   threshold                   = "0.050"
   alarm_description           = "RDS Write Latency Critical on ${var.identifier}"
+  dimensions {
+    DBInstanceIdentifier      = "${var.identifier}"
+  }
+  alarm_actions               = ["${var.alarm_action}"]
+  insufficient_data_actions   = []
+}
+
+resource "aws_cloudwatch_metric_alarm" "Free-Memory-Warning" {
+  alarm_name                  = "${var.identifier} Free-Memory-Warning"
+  comparison_operator         = "LessThanThreshold"
+  evaluation_periods          = "2"
+  metric_name                 = "FreeableMemory"
+  namespace                   = "AWS/RDS"
+  period                      = "1800"
+  statistic                   = "Sum"
+  threshold                   = "1024"
+  alarm_description           = "RDS Free Memory Warning on ${var.identifier}"
   dimensions {
     DBInstanceIdentifier      = "${var.identifier}"
   }

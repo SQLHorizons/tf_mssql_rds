@@ -33,13 +33,23 @@ variable "username" {
   default     = "dbAdmin"
 }
 
-variable "password" {
-  description = "Password for the master DB user. Note that this may show up in logs, and it will be stored in the state file"
-}
+#variable "password" {
+#  description = "Password for the master DB user. Note that this may show up in logs, and it will be stored in the state file"
+#}
 
 variable "port" {
   description = "The port on which the DB accepts connections"
   default     = 1433
+}
+
+variable "create_cidr_ingress_rule" {
+  description = "If set to true, create an cidr ingress rule for RDS"
+  default = false
+}
+
+variable "cidr_blocks" {
+  description = "List of cidr blocks"
+  default = "0"
 }
 
 variable "vpc_security_group_ids" {
@@ -147,6 +157,10 @@ variable "team_name" {
   description = "Owning team. The team name as provided by cloud operations when your team was created."
 }
 
+variable "secret" {
+  description = "The vault secret backend to secure the password."
+}
+
 #DNS
 variable "zone_id" {
   description = "The ID of the hosted zone to contain this record."
@@ -166,4 +180,8 @@ variable "dns_ttl" {
 variable "domain_name" {
   description = "Domain name of the alias DNS record."
   default     = ""
+}
+
+variable "region" {
+  description = "Environment setting: Region to create the resource"
 }
