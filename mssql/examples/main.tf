@@ -1,5 +1,5 @@
 provider "aws" {
-  profile     = "${var.profile}"
+  version     = "1.1.0"
   assume_role = {
     role_arn  = "arn:aws:iam::${var.client_account_number}:role/${var.team_name}/${var.team_name}-${var.team_role}"
   }
@@ -7,25 +7,19 @@ provider "aws" {
 }
 
 provider "aws" {
-  alias       = "route-53-setup"
-  profile     = "${var.profile}"
-  region      = "${var.region}"  
+  version = "1.1.0"
+  alias   = "route-53-setup"
+  region  = "${var.region}"  
 }
 
 provider "vault" {
+  version = "1.0.0"
   address = "${var.vault_address}"
   token   = "${var.vault_token}"
 }
 
-terraform {
-  required_version = ">=0.9.11"
-  backend "s3" {
-    bucket  = "aviva-client-workload1-nonprod-cloud-operations-dba"
-    key     = "tfstate/rds/euw1zlukdbtm101.tfstate"
-    profile = "AWS-D-nonprod"
-    role_arn = "arn:aws:iam::300820918606:role/cloud-operations-dba/cloud-operations-dba-deployer"
-    region  = "eu-west-1"
-  }
+provider "random" {
+  version = "1.1.0"
 }
 
 data "aws_security_group" "application" {
@@ -36,32 +30,31 @@ data "aws_security_group" "application" {
 # DB
 #####
 module "tf_mssql_rds" {
-  source = "../../../../tfmodules/rds/mssql/"
+# source = "git::https://stash.aviva.co.uk/scm/ukdb/tfmodules.git//rds//mssql?ref=tf_mssql_rds"
+  source = "../../mssql"
 
-  identifier                 = "euw1zlukdbtm101"
+  identifier                 = "euw1zlukdbtm104"
   multi_az                   = true
    
   engine                     = "sqlserver-se"
-  engine_version             = "13.00.4422.0.v1"
+  engine_version             = "14.00.1000.169.v1"
   instance_class             = "db.m4.large"
+
+  port                       = "${var.port}"
 
   allocated_storage          = 200
   storage_type               = "gp2"
   iops                       = 0
 
-  #create_cidr_ingress_rule   = true
-  #cidr_blocks                = "10.0.0.0/8"
-
   vpc_security_group_ids     = ["${data.aws_security_group.application.id}"]
   apply_immediately          = true
-  auto_minor_version_upgrade = true
 
   tags                       = {
     Costcentre_Projectcode   = "9ISB3_74851"
     HSN                      = "DB TOOLS NPE AWD"
     Owner                    = "clouddatabaseteam@aviva.com"
     Schedule                 = "NSun0000-2359Mon0000-2359Tue0000-2359Wed0000-2359Thu0000-2359Fri0000-2359Sat0000-2359"
-    Expiry                   = "2017-12-31"
+    Expiry                   = "2018-01-31"
     Name                     = "Template Script"
     Team                     = "${var.team_name}"
     Jira                     = ""
@@ -71,6 +64,7 @@ module "tf_mssql_rds" {
   team_name                  = "${var.team_name}"
   db_subnet_group_name       = "${var.db_subnet_group_name}"
   iam_role                   = "${var.iam_role}"
+  vault_alias                = "Test103.rds"
   secret                     = "${var.secret}"
 
   zone_id                    = "Z3FHCT1JYHVH0Q"
@@ -79,6 +73,15 @@ module "tf_mssql_rds" {
 
   alarm_action               = "${var.alarm_action}"
   region                     = "${var.region}"
+}
+
+resource "aws_security_group_rule" "clientPCs" {
+  security_group_id = "${module.tf_mssql_rds.rds_db_instance_security_group_id}"
+  type              = "ingress"
+  from_port         = "${var.port}"
+  to_port           = "${var.port}"
+  protocol          = "tcp"
+  cidr_blocks       = ["10.0.0.0/8"]
 }
 
 output "alias" {

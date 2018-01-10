@@ -22,6 +22,11 @@ variable "vpc_id" {
   description = "Environment setting: the id of the VPC that the RDS instance belongs to."
 }
 
+variable "port" {
+  description = "The port on which the DB accepts connections"
+  default     = 1433
+}
+
 variable "db_subnet_group_name" {
   description = "Name of DB subnet group. DB instance will be created in the VPC associated with the DB subnet group. If unspecified, will be created in the default VPC"
 }

@@ -11,7 +11,7 @@ byte_length = 8
 }
 
 resource "vault_generic_secret" "rds_vault_access" {
-  path = "${var.secret}/${var.identifier}"
+  path = "${var.secret}/${var.vault_alias}"
 
   data_json = <<EOT
 {
@@ -21,28 +21,36 @@ resource "vault_generic_secret" "rds_vault_access" {
 EOT
 }
 
-resource "aws_kms_key" "rds-instance-key" {
+resource "aws_kms_key" "rds_instance_key" {
   description = "KMS key for rds instance - ${var.identifier}"
   tags = "${var.tags}"
 }
 
-resource "aws_kms_alias" "rds-instance-key-alias" {
+resource "aws_kms_alias" "rds_instance_key_alias" {
   name          = "alias/${var.identifier}"
-  target_key_id = "${aws_kms_key.rds-instance-key.arn}"
+  target_key_id = "${aws_kms_key.rds_instance_key.arn}"
 }
 
-module "rds_sg" {
-  source = "./rds_sg/"
+resource "aws_security_group" "rds_sg" {
+  name        = "${var.identifier}"
+  description = "Controls access to MS SQL RDS instances"
+  vpc_id      = "${var.vpc_id}"
 
-  create_cidr_ingress_rule = "${var.create_cidr_ingress_rule}"
-  identifier               = "${var.identifier}"
-  vpc_id                   = "${var.vpc_id}"
-  port                     = "${var.port}"
+  egress {
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    cidr_blocks     = ["0.0.0.0/0"]
+  }
 
-  vpc_security_group_ids   = ["${data.aws_security_group.DBAdmin.id}","${var.vpc_security_group_ids}"]
-  cidr_blocks              = "${var.cidr_blocks}"
+  ingress {
+    from_port       = "${var.port}"
+    to_port         = "${var.port}"
+    protocol        = "tcp"
+    security_groups = ["${data.aws_security_group.DBAdmin.id}","${var.vpc_security_group_ids}"]
+  }
 
-  tags                     = "${var.tags}"
+  tags = "${var.tags}"
 }
 
 resource "aws_db_option_group" "option_group" {
@@ -99,16 +107,15 @@ resource "aws_db_instance" "rds" {
   allocated_storage           = "${var.allocated_storage}"
   storage_type                = "${var.storage_type}"
 
-  storage_encrypted           = "${aws_kms_key.rds-instance-key.arn == "" ? false : true}"
-  kms_key_id                  = "${aws_kms_key.rds-instance-key.arn}"
+  storage_encrypted           = "${aws_kms_key.rds_instance_key.arn == "" ? false : true}"
+  kms_key_id                  = "${aws_kms_key.rds_instance_key.arn}"
 
   name                        = "${var.name}"
   username                    = "${var.username}"
   password                    = "${random_id.password.hex}"
   port                        = "${var.port}"
 
-  vpc_security_group_ids      = ["${module.rds_sg.id}"]
-
+  vpc_security_group_ids      = ["${aws_security_group.rds_sg.id}"]
   db_subnet_group_name        = "${var.db_subnet_group_name}"
   option_group_name           = "${aws_db_option_group.option_group.name}"
   parameter_group_name        = "${aws_db_parameter_group.parameter_group.name}"
@@ -130,6 +137,11 @@ resource "aws_db_instance" "rds" {
   backup_window               = "${var.backup_window}"
 
   tags = "${var.tags}"
+
+  timeouts {
+    create = "90m"
+    delete = "2h"
+  }
 }
 
 resource "aws_route53_record" "alias" {

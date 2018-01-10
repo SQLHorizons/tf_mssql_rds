@@ -33,23 +33,9 @@ variable "username" {
   default     = "dbAdmin"
 }
 
-#variable "password" {
-#  description = "Password for the master DB user. Note that this may show up in logs, and it will be stored in the state file"
-#}
-
 variable "port" {
   description = "The port on which the DB accepts connections"
   default     = 1433
-}
-
-variable "create_cidr_ingress_rule" {
-  description = "If set to true, create an cidr ingress rule for RDS"
-  default = false
-}
-
-variable "cidr_blocks" {
-  description = "List of cidr blocks"
-  default = "0"
 }
 
 variable "vpc_security_group_ids" {
@@ -80,7 +66,7 @@ variable "allow_major_version_upgrade" {
 
 variable "auto_minor_version_upgrade" {
   description = "Indicates that minor engine upgrades will be applied automatically to the DB instance during the maintenance window"
-  default     = false
+  default     = true
 }
 
 variable "apply_immediately" {
@@ -155,6 +141,10 @@ variable "vpc_id" {
 
 variable "team_name" {
   description = "Owning team. The team name as provided by cloud operations when your team was created."
+}
+
+variable "vault_alias" {
+  description = "The identifier for the vault secret."
 }
 
 variable "secret" {

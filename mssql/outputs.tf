@@ -61,5 +61,5 @@ output "rds_db_instance_port" {
 
 output "rds_db_instance_security_group_id" {
   description = "The database port"
-  value       = "${module.rds_sg.id}"
+  value       = "${aws_security_group.rds_sg.id}"
 }
