@@ -1,5 +1,5 @@
-variable "profile" {
-  description = "Environment setting: AWS profile used to execute terraform"
+variable "identifier" {
+  description = "The name of the RDS instance, if omitted, Terraform will assign a random, unique identifier"
 }
 
 variable "team_name" {
@@ -12,10 +12,6 @@ variable "team_role" {
 
 variable "client_account_number" {
   description = "Environment setting: AWS account to connect to"
-}
-
-variable "managment_account" {
-  description = "Environment setting: AWS account to configure route 53 alias."
 }
 
 variable "vpc_id" {
@@ -51,10 +47,6 @@ variable "dns_ttl" {
 
 variable "vault_address" {
   description = "URL address to vault store."
-}
-
-variable "vault_token" {
-  description = "Token access for vault."
 }
 
 variable "region" {

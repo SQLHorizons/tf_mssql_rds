@@ -15,7 +15,6 @@ provider "aws" {
 provider "vault" {
   version = "1.0.0"
   address = "${var.vault_address}"
-  token   = "${var.vault_token}"
 }
 
 provider "random" {
@@ -33,7 +32,7 @@ module "tf_mssql_rds" {
 # source = "git::https://stash.aviva.co.uk/scm/ukdb/tfmodules.git//rds//mssql?ref=tf_mssql_rds"
   source = "../../mssql"
 
-  identifier                 = "euw1zlukdbtm104"
+  identifier                 = "${var.identifier}"
   multi_az                   = true
    
   engine                     = "sqlserver-se"
@@ -64,7 +63,7 @@ module "tf_mssql_rds" {
   team_name                  = "${var.team_name}"
   db_subnet_group_name       = "${var.db_subnet_group_name}"
   iam_role                   = "${var.iam_role}"
-  vault_alias                = "Test103.rds"
+  vault_alias                = "Test104.rds"
   secret                     = "${var.secret}"
 
   zone_id                    = "Z3FHCT1JYHVH0Q"
@@ -82,9 +81,4 @@ resource "aws_security_group_rule" "clientPCs" {
   to_port           = "${var.port}"
   protocol          = "tcp"
   cidr_blocks       = ["10.0.0.0/8"]
-}
-
-output "alias" {
-  description = "The Route 53 alias of the DB instance"
-  value       = "${module.tf_mssql_rds.rds_db_instance_alias}"
 }

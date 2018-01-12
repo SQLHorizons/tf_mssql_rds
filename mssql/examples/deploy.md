@@ -6,47 +6,102 @@ This directory contains example deployment templates for execution with the tf_m
 Contents
 --------
 
-* deploy.md - This read me guide.
-* main.tf - The main terraform deployment script.
-* variables.tf - List of variables used within the scripts.
-* environment.tfvars - Environment specific  values, this example is for non-prod.
+* [deploy.md](https://stash.aviva.co.uk/projects/UKDB/repos/tfmodules/browse/rds/mssql/examples/deploy.md) - This read me guide.
+* [main.tf](https://stash.aviva.co.uk/projects/UKDB/repos/tfmodules/browse/rds/mssql/examples/main.tf) - The main terraform deployment script.
+* [variables.tf](https://stash.aviva.co.uk/projects/UKDB/repos/tfmodules/browse/rds/mssql/examples/variables.tf) - List of variables used within the scripts.
+* [environment.tfvars](https://stash.aviva.co.uk/projects/UKDB/repos/tfmodules/browse/rds/mssql/examples/environment.tfvars) - Environment specific  values, this example is for non-prod.
 
-Usage
------
+Configure 
+---------
+The following scripts are based on a Jenkins like deployment, and illustrate how to configure a user's Windows environment using PowerShell to simulate this process.
+
+### *Proxy Settings*
 
 ```powershell
-$env:NO_PROXY    = "avivacloud.com"
-$env:VAULT_ADDR  = "https://vault.management.aws-euw1-np.avivacloud.com"
+#   Set proxy configuration.
 
-#   Get your vault token.
+$env:NO_PROXY    = ".avivacloud.com,.aws.com"
+$env:HTTPS_PROXY = "http://uknp-obproxy.avivaaws.com:80"
+$env:HTTP_PROXY  = "http://uknp-obproxy.avivaaws.com:80"
+```
 
-vault auth -method=ldap username=$env:username
+### *Terraform Plugins*
+The third-party plugins used by resources are preloaded into the jenkins slave, if its not in the list the terraform initialise with fail.  Create the following folders and populate `$env:APPDATA\terraform.d\plugins\windows_amd64` with the plugins currently deployed to the jenkins slave.
+ 
+```powershell
+#   Setting up the third-party plugins folders and provider plugin cache
 
-#   Secrets: add the values for these interactively but DO NOT check into Source Control.
+New-Item "$env:APPDATA\terraform.d\plugins\windows_amd64" -type directory -ErrorAction SilentlyContinue
+New-Item "$env:APPDATA\terraform.d\plugin-cache" -type directory -ErrorAction SilentlyContinue
 
-$env:VAULT_TOKEN           = ""
+$env:TF_PLUGIN_CACHE_DIR = "$env:APPDATA\terraform.d\plugin-cache"
+```
+
+### *AWS Secrets*
+Paste in your AWS Access Key ID and Secret Access Key for the necessary platform, but DO NOT check into Source Control.
+
+```powershell
 $env:AWS_ACCESS_KEY_ID     = ""
 $env:AWS_SECRET_ACCESS_KEY = ""
+```
 
-#   Job parameters.
+Jenkins Deploy
+--------------
+These script blocks are representative of how the Jenkins RDS deployment is configured and executes.
 
-$environment   = 'platformtest'
-$account       = '445906556292'
-$clientvpc     = 'client-workload1'
+### *PipelineJob Parameters*
+The pipelineJob parameters configure the 'Build with Parameters' section of the pipeline job.
+
+```powershell
+#   Environment specific parameters
+
+$environment   = 'nonprod' 
+$account       = '300820918606'
+$client_vpc    = 'client-workload1'
 $identifier    = 'euw1zlukdbtm104'
+$vault_addr    = "https://vault.management.aws-euw1-np.avivacloud.com"
 
+#   Job parameters
+
+$Credential    = (Get-Credential -UserName $env:USERNAME -Message "Password?").GetNetworkCredential()
 $aws_role_arn  = "arn:aws:iam::$($account):role/cloud-operations-dba/cloud-operations-dba-deployer"
-$aws_s3_bucket = "aviva-$($clientvpc)-$($environment)-cloud-operations-dba"
+$aws_s3_bucket = "aviva-$($client_vpc)-$($environment)-cloud-operations-dba"
 $aws_state_key = "tfstate/rds/$($identifier).tfstate"
 $region        = "eu-west-1"
+```
 
-#   terraform Initialise.
+### *Get Vault Token*
+This step retrieves a temporary token from the vault used in storing secrets, i.e. the master username and password, and RDS endpoint details.
 
+```powershell
+$WebRequest = @{
+    Uri    = "$vault_addr/v1/auth/ldap/login/$($Credential.UserName)"
+    Method = "POST"
+    Body   = @{password = $($Credential.Password)}|ConvertTo-Json
+}
+
+$env:VAULT_TOKEN=$($(Invoke-WebRequest @WebRequest).Content | ConvertFrom-Json).auth.client_token
+```
+
+### *Terraform Initialise*
+This step is used to download and update modules mentioned in the root module and, initialize a working directory containing Terraform configuration files, see [command: get](https://www.terraform.io/docs/commands/get.html) and, [command: init](https://www.terraform.io/docs/commands/init.html) references. 
+
+```powershell
 terraform get -update
 
 terraform init -upgrade=false -backend=true -backend-config='bucket=$aws_s3_bucket' -backend-config='key=$aws_state_key' -backend-config='role_arn=$aws_role_arn' -backend-config='region=$region'
+```
 
-#   terraform Plan.
+### *Terraform Plan*
+This command is a convenient way to check whether the execution plan for a set of changes matches your expectations without making any changes to real resources or to the state, see [command: plan](https://www.terraform.io/docs/commands/plan.html) reference.
 
-terraform plan -var-file ./environment.tfvars -var 'vault_token=$env:VAULT_TOKEN'
+```powershell
+terraform plan -var-file ./environment.tfvars  -var identifier=$identifier
+```
+
+### *Terraform Apply*
+The terraform apply command is used to apply the changes required to reach the desired state of the configuration, or the pre-determined set of actions generated by a terraform plan execution plan, see [command: apply](https://www.terraform.io/docs/commands/apply.html) reference.
+
+```powershell
+terraform apply -var-file ./environment.tfvars  -var identifier=$identifier
 ```

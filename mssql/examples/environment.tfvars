@@ -1,8 +1,6 @@
-profile               = "AWS-D-nonprod"
 team_name             = "cloud-operations-dba"
 team_role             = "deployer"
 client_account_number = "300820918606"
-managment_account     = "906261169288"
 region                = "eu-west-1"
 
 vpc_id                = "vpc-0e03936a"
